@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Retro Racer 2.0</title>
+    <!-- Tailwind CSS para estilização rápida e responsiva -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* ======================================= */
+        /* CSS (Estilos do Jogo) */
+        /* ======================================= */
+        
+        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+        
+        body {
+            background-color: #0d1117;
+            font-family: 'VT323', monospace;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+            user-select: none; /* Previne seleção de texto */
+        }
+
+        #game-container {
+            width: 90%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-shadow: 0 0 50px rgba(50, 255, 255, 0.5); /* Efeito neon */
+            border-radius: 1rem;
+            overflow: hidden;
+            background-color: #161b22;
+        }
+
+        #game-canvas {
+            background-color: #000;
+            width: 100%;
+            display: block;
+            height: 500px; /* Altura fixa para perspectiva */
+        }
+
+        .message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 3px solid #32fffe;
+            color: #32fffe;
+            text-align: center;
+            z-index: 1000;
+            font-size: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 0 15px #32fffe;
+            display: none;
+        }
+
+        .retro-button {
+            background-color: #32fffe;
+            color: #000000;
+            font-size: 1.25rem;
+            padding: 0.5rem 1.5rem;
+            border: 3px solid #000000;
+            box-shadow: 0 5px 0 0 #000000;
+            transition: all 0.1s;
+            border-radius: 0.5rem;
+        }
+        .retro-button:hover {
+            background-color: #00ffff;
+            box-shadow: 0 3px 0 0 #000000;
+            transform: translateY(2px);
+        }
+        .track-card {
+            border: 2px solid #32fffe;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+        }
+        .track-card:hover {
+            box-shadow: 0 0 10px #32fffe;
+            transform: scale(1.02);
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Tela do Menu Principal -->
+    <div id="main-menu" class="w-full p-4 flex flex-col items-center justify-center space-y-6">
+        <h1 class="text-5xl text-[#32fffe] mb-8 font-extrabold animate-pulse">QUANTUM RACER 2.0</h1>
+        
+        <button id="start-race-button" class="retro-button w-full sm:w-2/3">INICIAR CORRIDA</button>
+        <button id="options-button" class="retro-button w-full sm:w-2/3 bg-gray-600 text-white">OPÇÕES</button>
+    </div>
+
+    <!-- Tela de Seleção de Pista -->
+    <div id="track-select-menu" class="w-full p-6 hidden flex-col items-center justify-center space-y-4">
+        <h2 class="text-3xl text-red-500 mb-4">SELECIONE A PISTA</h2>
+        <div id="track-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
+            <!-- Pistas serão injetadas aqui -->
+        </div>
+        <button id="back-to-menu-button" class="retro-button bg-gray-600 text-white mt-4">VOLTAR</button>
+    </div>
+</div>
+<div id="message-box-container"></div>
+
+
+<script>
+    // =======================================
+    // JAVASCRIPT (Lógica do Jogo)
+    // =======================================
+
+    // Variáveis globais para o Canvas
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // ===================================================================================================
+    //                                         GAME DATA (Equivalente ao game_data.json)
+    // ===================================================================================================
+
+    const gameData = {
+        "GLOBAL_SETTINGS": {
+            "NUM_RIVALS": 17,
+            "LAP_COUNT": 3,
+            "PIT_STOP_TIME_SECONDS": 5.0,
+            "FUEL_MAX": 1000.0,
+            "FUEL_CONSUMPTION_RATE": 1.0
+        },
+        "CAR_ATTRIBUTES": {
+            "A_VERDE": { "name": "Esmeralda 900", "top_speed": 7.0, "acceleration": 7.0, "handling": 7.0, "sprite_id": "car_A_verde" },
+            "B_AMARELO": { "name": "Turbo-Max 5000", "top_speed": 10.0, "acceleration": 6.0, "handling": 5.0, "sprite_id": "car_B_amarelo" },
+            "C_VERMELHO": { "name": "Quantum Rider", "top_speed": 6.0, "acceleration": 8.0, "handling": 10.0, "sprite_id": "car_C_vermelho" },
+            "RIVAL_COLORS": ["AZUL_CIANO", "ROXO", "PRATA", "PRETO", "BRANCO"]
+        },
+        "TRACK_LAYOUTS": {
+            "DESERT_1_OASIS_VELOZ": {
+                "name": "Oásis Veloz", "scenery": "DESERT", "difficulty": "EASY", 
+                "scene_objects": ["arbusto.png", "cacto.png", "rocha.png"],
+                "horizon_color": "#ffcc00", // Cor do horizonte para Desert
+                "segments": [
+                    [0, 0, 0, 50], [1, 0, 0, 10], [0, 0, 0, 30],
+                    [-1, 0, 1, 15], [0, 0, 0, 20], [2, 0, 0, 15],
+                    [0, -1, 0, 20], [0, 0, 0, 40], ["PIT_STOP", 10],
+                    [0, 0, 0, 20]
+                ]
+            },
+            "NEON_4_CIRCUITO_URBANO": {
+                "name": "Circuito Urbano", "scenery": "NEON", "difficulty": "EASY",
+                "scene_objects": ["barreira-de-pista.png", "hidrante.png", "poste-de-luz.png"],
+                "horizon_color": "#120042", // Cor do horizonte para Neon
+                "segments": [
+                    [0, 0, 0, 60], [1, 0, 0, 15], [0, 0, 0, 40],
+                    [-2, 0, 1, 20], [0, 1, 0, 25], [1, -1, 0, 15],
+                    [0, 0, 0, 30], [0, 0, 0, 45], ["PIT_STOP", 10],
+                    [-1, 0, 0, 10], [0, 0, 0, 20]
+                ]
+            },
+        }
+    };
+
+    // ===================================================================================================
+    //                                         CONSTANTES DO JOGO (Configuração do Motor)
+    // ===================================================================================================
+
+    const GAME = {
+        WIDTH: 800,
+        HEIGHT: 500,
+        ROAD: {
+            WIDTH: 2000,          // Largura da estrada (mundo virtual)
+            SEGMENT_LENGTH: 200,  // Comprimento de cada segmento de pista (em unidades de mundo)
+            RUMBLE_LENGTH: 3,     // Segmentos para as faixas laterais (rumble strips)
+            CURVE_SCALE: 0.5      // Ajusta o quão forte é a curva
+        },
+        CAMERA: {
+            HEIGHT: 1000,         // Altura da câmera
+            DEPTH: 0.8,           // Distância da câmera até o plano de projeção (FOV)
+            Z: null,              // Posição Z da câmera (calculada no resize)
+        },
+        BACKGROUND: {
+            // Cores para as variações de pista
+            GRASS_COLORS: ['#008000', '#009900'],
+            RUMBLE_COLORS: ['#cc0000', '#ffffff'],
+            ROAD_COLORS: ['#888888', '#999999'],
+        },
+        MAX_SPEED: 250,           // Velocidade máxima base (para escala)
+        OFF_ROAD_LIMIT: 1.3,      // Limite lateral para sair da pista (multiplicador da largura da pista)
+        PLAYER_Z: 0.9,            // Posição Z da tela onde o carro do jogador é desenhado (projeção)
+        MAX_X_POS: 1000,          // Limite máximo de movimento lateral (virtual)
+    };
+
+    // ===================================================================================================
+    //                                         STATE (Estado do Jogo)
+    // ===================================================================================================
+
+    let state = {
+        currentScene: 'MENU', 
+        lastTime: 0,
+        // Posição e velocidade do carro
+        position: 0,            // Posição Z do carro na pista (em unidades de mundo)
+        side: 0,                // Posição X do carro (lateral - centralizado em 0)
+        speed: 0,
+        maxSpeed: 0,
+        accel: 0,
+        handling: 0,
+        fuel: gameData.GLOBAL_SETTINGS.FUEL_MAX,
+
+        // Estado da Pista
+        trackSegments: [],
+        totalTrackLength: 0,
+        trackScenery: null,
+        horizonColor: null,
+        
+        // Input
+        keyLeft: false,
+        keyRight: false,
+        keyUp: false,
+        keyDown: false,
+    };
+
+    // ===================================================================================================
+    //                                         CLASSES E UTILITÁRIOS
+    // ===================================================================================================
+
+    // Função para mapear um valor de um intervalo para outro
+    function linearInterpolate(value, min1, max1, min2, max2) {
+        return min2 + (max2 - min2) * ((value - min1) / (max1 - min1));
+    }
+
+    // Função para mostrar mensagens de erro ou info
+    function showMessageBox(message, duration = 3000) {
+        let box = document.querySelector('.message-box');
+        if (!box) {
+            box = document.createElement('div');
+            box.className = 'message-box';
+            document.getElementById('message-box-container').appendChild(box);
+        }
+        box.textContent = message;
+        box.style.display = 'block';
+        setTimeout(() => {
+            box.style.display = 'none';
+        }, duration);
+    }
+
+    // Classe para representar um Segmento da Pista
+    class Segment {
+        constructor(index, curve, hill, length, color, trackWidth) {
+            this.index = index;
+            // world: coordenadas 3D, screen: coordenadas 2D projetadas
+            // O X será o offset lateral (acumulado da curva)
+            this.p1 = { world: { x: 0, y: hill, z: index * length }, screen: {} }; 
+            this.p2 = { world: { x: 0, y: hill + hill * length, z: (index + 1) * length }, screen: {} }; 
+            this.curve = curve;
+            this.hill = hill;
+            this.length = length;
+            this.color = color;
+            this.trackWidth = trackWidth;
+            
+            this.world = { x: 0 }; // Novo: Armazena o offset lateral do centro da pista (curva acumulada)
+            this.cars = []; 
+            this.objects = []; 
+        }
+
+        // Projeta as coordenadas 3D de um ponto para as coordenadas 2D da tela
+        project(point, segmentX, cameraX, cameraY, cameraZ) {
+            // A posição X do mundo é a posição lateral do ponto (p1/p2.world.x = 0) 
+            // somada ao offset do centro da pista (segmentX)
+            const absoluteX = point.world.x + segmentX; 
+
+            // Distância relativa ao ponto de visão da câmera
+            const relativeX = absoluteX - cameraX;
+            const relativeY = point.world.y - cameraY;
+            const relativeZ = point.world.z - cameraZ;
+
+            // Fator de escala (inversamente proporcional à distância Z)
+            const scale = GAME.CAMERA.DEPTH / relativeZ;
+            
+            // Coordenadas projetadas na tela
+            point.screen.x = GAME.WIDTH / 2 + (relativeX * scale * (GAME.WIDTH / 2));
+            point.screen.y = GAME.HEIGHT / 2 - (relativeY * scale * (GAME.HEIGHT / 2));
+            point.screen.w = this.trackWidth * scale * (GAME.WIDTH / 2); // Largura projetada da pista
+            point.screen.scale = scale; // Guarda a escala para renderizar sprites
+        }
+    }
+
+    // ===================================================================================================
+    //                                         GERAÇÃO E RENDERIZAÇÃO DA PISTA
+    // ===================================================================================================
+
+    function getSegment(pos) {
+        if (!state.trackSegments.length) return null;
+        // Normaliza a posição Z para o índice do segmento atual
+        const index = Math.floor(pos / GAME.ROAD.SEGMENT_LENGTH) % state.trackSegments.length;
+        return state.trackSegments[index];
+    }
+
+    function resetTrack(trackKey) {
+        state.trackSegments = [];
+        const layout = gameData.TRACK_LAYOUTS[trackKey];
+        if (!layout) {
+            showMessageBox("Erro: Pista não encontrada!");
+            return;
+        }
+
+        const segmentsData = layout.segments;
+        let totalLength = 0;
+        let currentCurve = 0;
+        let currentHill = 0;
+        let accumulatedCurveX = 0; // Acumulador da posição X do centro da pista
+
+        segmentsData.forEach((data) => {
+            const isPitStop = data[0] === "PIT_STOP";
+            
+            // Se for um segmento de dados normal (Curva, Hill, Multiplicador)
+            if (!isPitStop) {
+                // [Curva, Hill, Multiplicador_Curva, Multiplicador_Comprimento]
+                currentCurve = data[0];
+                currentHill = data[1];
+                const lengthMultiplier = data[3];
+
+                for (let j = 0; j < lengthMultiplier; j++) {
+                    const index = state.trackSegments.length;
+                    const isRumble = (Math.floor(index / GAME.ROAD.RUMBLE_LENGTH) % 2) === 0;
+                    
+                    const segment = new Segment(
+                        index,
+                        currentCurve,
+                        currentHill,
+                        GAME.ROAD.SEGMENT_LENGTH,
+                        { 
+                            road: isRumble ? GAME.BACKGROUND.ROAD_COLORS[0] : GAME.BACKGROUND.ROAD_COLORS[1], 
+                            rumble: isRumble ? GAME.BACKGROUND.RUMBLE_COLORS[0] : GAME.BACKGROUND.RUMBLE_COLORS[1], 
+                            grass: GAME.BACKGROUND.GRASS_COLORS[index % 2] 
+                        },
+                        GAME.ROAD.WIDTH
+                    );
+
+                    // 1. Acumula a Curva X para o centro da pista
+                    // O deslocamento X é proporcional à curvatura e ao comprimento do segmento
+                    accumulatedCurveX += segment.curve * GAME.ROAD.SEGMENT_LENGTH * GAME.ROAD.CURVE_SCALE;
+
+                    // 2. Armazena o centro X acumulado no segmento
+                    segment.world.x = accumulatedCurveX;
+                    
+                    state.trackSegments.push(segment);
+                    totalLength += GAME.ROAD.SEGMENT_LENGTH;
+                }
+            } else {
+                // Segmento PIT_STOP
+                const pitLength = data[1] || 10;
+                for (let j = 0; j < pitLength; j++) {
+                    const index = state.trackSegments.length;
+                    const isRumble = (Math.floor(index / GAME.ROAD.RUMBLE_LENGTH) % 2) === 0;
+                    const segment = new Segment(
+                        index, 0, 0, GAME.ROAD.SEGMENT_LENGTH,
+                        { 
+                            road: '#f0f000', // Pista amarela para Pit Stop
+                            rumble: isRumble ? '#000000' : '#888888', 
+                            grass: '#aaaa00' 
+                        },
+                        GAME.ROAD.WIDTH
+                    );
+                    
+                    // Pit stop não altera a curva (currentCurve=0)
+                    segment.world.x = accumulatedCurveX; // Mantém o X da curva anterior
+                    
+                    state.trackSegments.push(segment);
+                    totalLength += GAME.ROAD.SEGMENT_LENGTH;
+                }
+            }
+        });
+
+        state.totalTrackLength = totalLength;
+        state.trackScenery = layout.scenery;
+        state.horizonColor = layout.horizon_color;
+
+        // Definir atributos do carro do jogador (usando B_AMARELO como default)
+        const carAttrs = gameData.CAR_ATTRIBUTES.B_AMARELO; 
+        state.maxSpeed = linearInterpolate(carAttrs.top_speed, 1, 10, 50, GAME.MAX_SPEED);
+        state.accel = linearInterpolate(carAttrs.acceleration, 1, 10, 0.5, 5.0);
+        state.handling = linearInterpolate(carAttrs.handling, 1, 10, 0.05, 0.2);
+
+        showMessageBox(`Pista ${layout.name} carregada!`, 2000);
+    }
+
+    // Desenha um quadrilátero (face do segmento da pista)
+    function drawQuad(c, x1, y1, w1, x2, y2, w2, color) {
+        c.fillStyle = color;
+        c.beginPath();
+        c.moveTo(x1 - w1, y1);
+        c.lineTo(x2 - w2, y2);
+        c.lineTo(x2 + w2, y2);
+        c.lineTo(x1 + w1, y1);
+        c.fill();
+    }
+
+    // Desenha o horizonte e as áreas laterais
+    function renderBackground() {
+        // Céu/Horizonte
+        ctx.fillStyle = state.horizonColor || "#1e1e3f";
+        ctx.fillRect(0, 0, GAME.WIDTH, GAME.HEIGHT / 2);
+    }
+
+    // O coração do motor pseudo-3D
+    function renderRoad() {
+        const baseSegment = getSegment(state.position);
+        if (!baseSegment) return;
+        
+        const currentSegmentIndex = baseSegment.index;
+        
+        // 1. Calcula a posição X do centro da pista no ponto exato do carro
+        const segmentOffset = state.position % GAME.ROAD.SEGMENT_LENGTH;
+        const previousSegment = state.trackSegments[(currentSegmentIndex - 1 + state.trackSegments.length) % state.trackSegments.length];
+        
+        // Interpolação linear do centro X da pista (curve center)
+        const curveCenterPrev = previousSegment.world.x;
+        const curveCenterCurrent = baseSegment.world.x;
+        
+        const curveCenterSegment = linearInterpolate(
+            segmentOffset, 
+            0, GAME.ROAD.SEGMENT_LENGTH, 
+            curveCenterPrev, curveCenterCurrent
+        );
+        
+        // 2. Define a Câmera
+        // cameraX é a posição lateral do carro (state.side) + o offset da curva da pista (curveCenterSegment)
+        const cameraX = state.side + curveCenterSegment; 
+        const cameraY = GAME.CAMERA.HEIGHT;
+        const cameraZ = state.position + GAME.CAMERA.Z;
+
+        // Renderiza a pista de longe para perto (de i=400 até i=0)
+        for (let i = 400; i >= 0; i--) {
+            const index = (currentSegmentIndex + i) % state.trackSegments.length;
+            const current = state.trackSegments[index];
+            const previousIndex = (currentSegmentIndex + i - 1 + state.trackSegments.length) % state.trackSegments.length;
+            const previous = state.trackSegments[previousIndex];
+            
+            // Posição X do centro da pista (offset da curva) nos segmentos
+            const x1 = previous.world.x;
+            const x2 = current.world.x;
+
+            // Projeta os dois pontos, usando o offset X do segmento
+            previous.project(previous.p1, x1, cameraX, cameraY, cameraZ);
+            current.project(current.p1, x2, cameraX, cameraY, cameraZ);
+
+            // A pista só é desenhada se o segmento anterior e o atual estiverem visíveis
+            if (current.p1.screen.scale > 0 && previous.p1.screen.scale > 0) {
+                
+                // 1. Faixa lateral (Rumble Strip)
+                drawQuad(
+                    ctx,
+                    previous.p1.screen.x, previous.p1.screen.y, previous.p1.screen.w * GAME.OFF_ROAD_LIMIT,
+                    current.p1.screen.x, current.p1.screen.y, current.p1.screen.w * GAME.OFF_ROAD_LIMIT,
+                    current.color.rumble
+                );
+
+                // 2. Pista Principal
+                drawQuad(
+                    ctx,
+                    previous.p1.screen.x, previous.p1.screen.y, previous.p1.screen.w,
+                    current.p1.screen.x, current.p1.screen.y, current.p1.screen.w,
+                    current.color.road
+                );
+            }
+        }
+    }
+
+
+    // ===================================================================================================
+    //                                         LÓGICA DO JOGO E UPDATE
+    // ===================================================================================================
+
+    function update(dt) {
+        if (state.currentScene !== 'RACE') return;
+
+        // 1. Atualizar posição e velocidade
+        if (state.keyUp) {
+            state.speed += state.accel * dt;
+        } else if (state.keyDown) {
+            state.speed -= state.accel * dt * 3; // Freio é mais rápido
+        } else {
+            state.speed *= 0.98; // Desaceleração natural
+        }
+        
+        // Limitar velocidade
+        state.speed = Math.max(0, Math.min(state.speed, state.maxSpeed));
+        
+        // 2. Movimento Lateral (Steering)
+        const currentSegment = getSegment(state.position);
+        if (currentSegment) {
+            // A curva da pista afeta o steering do carro (movimento lateral)
+            // Se a velocidade for alta, a força centrífuga é maior
+            const centrifugalForce = currentSegment.curve * (state.speed / state.maxSpeed) * 1000;
+
+            if (state.keyLeft) state.side -= state.handling * state.speed * dt;
+            if (state.keyRight) state.side += state.handling * state.speed * dt;
+            
+            // Aplica a força centrífuga (puxa o carro para fora da curva)
+            state.side -= centrifugalForce * dt;
+        }
+
+        // 3. Limitar a posição lateral (para não sair demais da pista)
+        // O limite lateral é ajustado pelo offset do centro da pista do segmento atual
+        const curveX = currentSegment ? currentSegment.world.x : 0;
+        const roadLimit = GAME.MAX_X_POS * GAME.OFF_ROAD_LIMIT;
+        
+        state.side = Math.max(curveX - roadLimit, Math.min(state.side, curveX + roadLimit));
+
+
+        // 4. Mover o carro (Z-Position)
+        state.position += state.speed * dt * 10; // Multiplicador para tornar a velocidade visível
+
+        // 5. Loop da Pista
+        while (state.position >= state.totalTrackLength) {
+             state.position -= state.totalTrackLength;
+             // Lógica de volta completa (lap + 1) seria aqui
+        }
+    }
+
+    // ===================================================================================================
+    //                                         LOOP PRINCIPAL
+    // ===================================================================================================
+
+    function gameLoop(currentTime) {
+        if (!state.lastTime) state.lastTime = currentTime;
+        const dt = (currentTime - state.lastTime) / 1000; // Delta Time em segundos
+        state.lastTime = currentTime;
+
+        // Limpa o canvas
+        ctx.clearRect(0, 0, GAME.WIDTH, GAME.HEIGHT);
+
+        switch (state.currentScene) {
+            case 'RACE':
+                update(dt); // Atualiza física
+                
+                renderBackground();
+                renderRoad();
+
+                // Placeholder do Carro do Jogador (Retângulo Vermelho na base da tela)
+                ctx.fillStyle = '#ff0000';
+                const playerScreenY = GAME.HEIGHT * GAME.PLAYER_Z;
+                ctx.fillRect(GAME.WIDTH / 2 - 25, playerScreenY - 50, 50, 50);
+                
+                // Exemplo de HUD na corrida (Texto)
+                ctx.font = '24px "VT323"';
+                ctx.fillStyle = '#32fffe';
+                ctx.fillText(`VELOCIDADE: ${Math.round(state.speed * 10)} KM/H`, 10, 30);
+                ctx.fillText(`COMBUSTÍVEL: ${Math.round(state.fuel)}`, 10, 60);
+
+                break;
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    // ===================================================================================================
+    //                                         INICIALIZAÇÃO E EVENTOS
+    // ===================================================================================================
+
+    function resizeCanvas() {
+        canvas.width = GAME.WIDTH;
+        canvas.height = GAME.HEIGHT;
+        GAME.CAMERA.Z = GAME.CAMERA.HEIGHT * GAME.CAMERA.DEPTH; 
+    }
+
+    function initTrackSelection() {
+        const trackList = document.getElementById('track-list');
+        trackList.innerHTML = '';
+        
+        // Cria um card/botão para cada pista
+        Object.entries(gameData.TRACK_LAYOUTS).forEach(([key, track]) => {
+            const button = document.createElement('div');
+            button.className = 'track-card flex flex-col items-center p-4 bg-[#282c34] text-[#32fffe]';
+            button.innerHTML = `
+                <span class="text-2xl font-bold">${track.name}</span>
+                <span class="text-sm text-gray-400">Cenário: ${track.scenery}</span>
+                <span class="text-xs ${track.difficulty === 'EASY' ? 'text-green-400' : 'text-yellow-500'}">Dificuldade: ${track.difficulty}</span>
+                <span class="text-xs text-red-400 mt-2">Corra!</span>
+            `;
+            button.onclick = () => {
+                startGame(key);
+            };
+            trackList.appendChild(button);
+        });
+        
+        document.getElementById('main-menu').classList.add('hidden');
+        document.getElementById('track-select-menu').classList.remove('hidden');
+        state.currentScene = 'TRACK_SELECT';
+    }
+
+    function startGame(trackKey) {
+        // Resetar o estado do carro e pista
+        state.position = 0;
+        state.side = 0;
+        state.speed = 0;
+        state.fuel = gameData.GLOBAL_SETTINGS.FUEL_MAX;
+
+        resetTrack(trackKey);
+        
+        document.getElementById('track-select-menu').classList.add('hidden');
+        state.currentScene = 'RACE';
+        
+        // Inicializa a velocidade para começar a corrida
+        state.speed = 1; 
+    }
+
+    // Manipulação de Input
+    function onKeyDown(e) {
+        if (state.currentScene === 'RACE') {
+            switch (e.key) {
+                case 'ArrowUp': case 'w': state.keyUp = true; break;
+                case 'ArrowDown': case 's': state.keyDown = true; break;
+                case 'ArrowLeft': case 'a': state.keyLeft = true; break;
+                case 'ArrowRight': case 'd': state.keyRight = true; break;
+            }
+        }
+    }
+
+    function onKeyUp(e) {
+        if (state.currentScene === 'RACE') {
+            switch (e.key) {
+                case 'ArrowUp': case 'w': state.keyUp = false; break;
+                case 'ArrowDown': case 's': state.keyDown = false; break;
+                case 'ArrowLeft': case 'a': state.keyLeft = false; break;
+                case 'ArrowRight': case 'd': state.keyRight = false; break;
+            }
+        }
+    }
+
+    // Inicialização
+    window.onload = () => {
+        resizeCanvas();
+
+        document.getElementById('start-race-button').onclick = initTrackSelection;
+        document.getElementById('back-to-menu-button').onclick = () => {
+            document.getElementById('track-select-menu').classList.add('hidden');
+            document.getElementById('main-menu').classList.remove('hidden');
+            state.currentScene = 'MENU';
+        };
+        document.getElementById('options-button').onclick = () => showMessageBox("Opções não implementadas no MVP.");
+        
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
+        window.addEventListener('resize', resizeCanvas);
+
+        gameLoop();
+    };
+
+</script>
+
+</body>
+</html>
